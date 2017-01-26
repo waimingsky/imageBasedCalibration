@@ -20,35 +20,68 @@ class usbRead():
 
 		# first endpoint
 		self.endpoint = self.device[0][(0,0)][0]
-		
-		self.readBitString()
-        
-	def readBitString(self): 
-		while True:
-			try:
-				data_packet = self.device.read(0x86,512,1000)
-				for n in range(512):
-					byte_data = data_packet[n]
-					bit_string =  self.int2base(byte_data,2)
-					print bit_string
-	
-					#looking for new frame
-					if bit_string[0] == '1' and bit_string[1] == '0' and bit_string[2] == '1' and bit_string[3] == '0':
-						print "invalid frame******************"
-						self.logg.info("invalid frame **************")
-						if bit_string[0] == '1' and bit_string[1] == '0' and bit_string[2] == '1' and bit_string[3] == '1':
-							print "new frame started #################################"
-							self.logg.info("new frame started ##########################")
-						else:
-							print "waiting for new frame to start *****************"
-							self.logg.info("waiting for new frame to start *****************")
-                   
 
-			except usb.core.USBError as e:
-				data_packet = None
-				self.logg.error("USB ERROR. %s"%(e.message))
-				if e.args == ('Operation timed out',):	
-					continue
+		self.waitForFrameValid = False
+		self.frameData = []
+		self.data_buff = []
+		self.buffSize = 8192
+		#self.readBitString()
+		self.getDataBuff()
+		self.readDataBuff()
+
+	def getDataBuff(self):
+		#buffer twice the data frame for 1024*1024*16bit/512Byte
+                for n in range (self.buffSize):
+                        data = self.device.read(0x86,512,0)
+                        #print data[0]
+			self.data_buff.append(data)
+
+		#print self.data_buff[0]
+		#print self.data_buff[0][0]
+		print "total data buff size: ",len(self.data_buff)
+		print "each data packet size: ",len(self.data_buff[0])
+   
+	def readDataBuff(self):
+		for n in range (len(self.data_buff)):
+			for m in range (len(self.data_buff[n])):
+				byte_data = self.data_buff[n][m]
+				bit_string = self.int2base(byte_data,2)
+				#print "bit string: ",bit_string
+
+				if bit_string[0] == '1' and bit_string[1] == '0' and bit_string[2] == '1' and bit_string[3] == '0':
+					self.waitForFrameValid = True
+					#print "***invalid frame***"
+
+				if bit_string[0] == '1' and bit_string[1] == '0' and bit_string[2] == '1' and bit_string[3] == '1':
+					if self.waitForFrameValid:
+						#print "***valid frame start***"
+						nextBit_string = self.int2base(self.data_buff[n][m+1],2)
+						self.frameData.append(bit_string[6:]+nextBit_string[0:])
+						#print "appended bit string: ", bit_string[6:]+nextBit_string[0:]
+						#print self.frameData
+						#self.logg.info(bit_string[6:]+nextBit_string[0:])
+						#self.logg.info(self.frameData)
+						try:
+							next2Bit_string = self.int2base(self.data_buff[n][m+2],2)
+							#print "next2Bit_string: ", next2Bit_string
+							if next2Bit_string[0] == '1' and next2Bit_string[1] == '0' and next2Bit_string[2] == '1' and next2Bit_string[3] == '0':
+								print "***end of frame***"
+								print "length of valid frame: ", len(self.frameData)
+								self.logg.info("***end of frame***")
+								self.logg.info(len(self.frameData))
+								self.waitForFrameValid = False
+								self.frameData = []
+
+						except:
+							#print "***end of 512 byte data packet***"
+							#print "no. of byte of this packet: ", m
+							#self.logg.info("***end of 512 byte data packet***")
+							pass
+							
+				#else:
+				#	print "Not the first byte data"		
+
+	   
 
 
 	def int2base(self,x, base):
@@ -92,5 +125,6 @@ class usbRead():
 		handler.setFormatter(Formatter('%(asctime)s %(filename)s[line:%(lineno)d] [%(levelname)s] %(message)s'))
 		logg.addHandler(handler)
 
+
 if __name__ == '__main__':
-	read = usbRead()
+	usbcyRead = usbRead()
